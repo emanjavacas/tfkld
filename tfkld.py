@@ -64,3 +64,42 @@ class TFKLD(object):
     def fit_transform(self, p1, p2, labels):
         self.fit(p1, p2, labels)
         return self.transform(p1), self.transform(p2)
+
+
+class CosineClassifier(object):
+    """
+    sklearn: simple cosine similarity classifier
+    """
+    def __init__(self, step=1-e3):
+        self.step = step
+        self.threshold = None
+
+    def _norm(self, m):
+        return np.sqrt((m * m).sum(1))[:, None]
+
+    def _sims(self, p1, p2):
+        return ((p1 / self._norm(p1)) * (p2 / self._norm(p2))).sum(1)
+
+    def _predict(self, sims, threshold):
+        index = sims >= threshold
+        preds = np.zeros_like(sims)
+        preds[sims >= threshold] = 1.
+        return preds
+
+    def predict(self, p1, p2):
+        if self.threshold is not None:
+            return self._predict(self._sims(p1, p2), self.threshold)
+
+        raise ValueError("Not fitted")
+
+    def fit(self, p1, p2, labels):
+        sims = self._sims()
+
+        best_threshold, best_value = 0.0, 0
+        for threshold in np.range(0, 1, self.step):
+            value = (self._predict(sims, threshold) == labels).sum()
+            if value > best_value:
+                best_value = value
+                best_threshold = threshold
+
+        self.threshold = best_threshold
