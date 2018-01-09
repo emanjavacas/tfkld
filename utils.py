@@ -19,7 +19,7 @@ def load_text(path, sep='\t', max_pairs=None):
                 pass
 
 
-def load_dir(path, sep='\t', max_pairs=None, dev=False):
+def load_dir(path, sep='\t', max_pairs=None, include_dev=False):
     train = os.path.join(path, 'train.data')
     test = os.path.join(path, 'test.data')
     dev = os.path.join(path, 'dev.data')
@@ -27,7 +27,12 @@ def load_dir(path, sep='\t', max_pairs=None, dev=False):
     labels_test, p1_test, p2_test = zip(*load_text(test, sep=sep))
     labels_dev, p1_dev, p2_dev = zip(*load_text(dev, sep=sep))
 
-    if not dev:
+    if include_dev:
+        return (labels_train, p1_train, p2_train), \
+            (labels_test, p1_test, p2_test), \
+            (labels_dev, p1_dev, p2_dev)
+
+    else:
         # ignore dev split (we do CV instead)
         labels_train += labels_dev
         p1_train += p1_dev
@@ -35,10 +40,6 @@ def load_dir(path, sep='\t', max_pairs=None, dev=False):
 
         return (labels_train, p1_train, p2_train), \
             (labels_test, p1_test, p2_test)
-
-    return (labels_train, p1_train, p2_train), \
-        (labels_test, p1_test, p2_test), \
-        (labels_dev, p1_dev, p2_dev)
 
 
 def make_vectorizer(X_train, ngram_range=(1, 2)):

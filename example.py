@@ -23,7 +23,7 @@ if __name__ == '__main__':
     parser.add_argument('--transductive', action='store_true')
     args = parser.parse_args()
 
-    data = load_dir(args.path, dev=False)
+    data = load_dir(args.path, include_dev=False)
     (labels_train, p1_train, p2_train), (labels_test, p1_test, p2_test) = data
 
     print("Vectorizing...")
@@ -44,27 +44,27 @@ if __name__ == '__main__':
     if args.dr_type.lower() == 'nmf':
         dr = NMF(n_components=args.n_components)
     elif args.dr_type.lower() == 'svd':
-        dr = TruncatedSVD(n_components=args.n_components)
+        dr = TruncatedSVD(n_components=args.n_components, algorithm='arpack')
     else:
         raise ValueError("Unrecognized dr_type {}".format(args.dr_type))
 
     if args.transductive:
-        X_train = sp.vstack([p1_train, p2_train, p1_test, p2_test])
-        p1_train, p2_train, p1_test, p2_test = np.split(dr.fit_transform(X_train), 4)
-
+        reduced = sp.vstack([p1_train, p2_train, p1_test, p2_test])
+        reduced = dr.fit_transform(reduced)
+        p1_train, p2_train = np.split(reduced[:p1_train.shape[0] * 2], 2)
+        p1_test, p2_test = np.split(reduced[p1_train.shape[0] * 2:], 2)
     else:
-        X_train = sp.vstack([p1_train, p2_train])
-        p1_train, p2_train = np.split(dr.fit_transform(X_train), 2)
+        reduced = sp.vstack([p1_train, p2_train])
+        p1_train, p2_train = np.split(dr.fit_transform(reduced), 2)
         p1_test, p2_test = dr.transform(p1_test), dr.transform(p2_test)
 
-    X_train = sp.hstack
     print("Training...")
-    parameters = sample_param_dists(
-        [[('kernel', ['linear'], 1),
-          ('C', loguniform(10, 0, 3), 6)],
-         [('kernel', ['rbf'], 1),
-          ('C', loguniform(10, 0, 3), 6),
-          ('gamma', loguniform(10, -9, 3), 10)]])
+    # parameters = sample_param_dists(
+    #     [[('kernel', ['linear'], 1),
+    #       ('C', loguniform(10, 0, 3), 6)],
+    #      [('kernel', ['rbf'], 1),
+    #       ('C', loguniform(10, 0, 3), 6),
+    #       ('gamma', loguniform(10, -9, 3), 10)]])
 
     C = [1, 10, 100, 1000]
     parameters = [
@@ -72,8 +72,7 @@ if __name__ == '__main__':
         {'kernel': ['rbf'], 'C': C, 'gamma': np.logspace(-9, 3, 13)}]
 
     X_train = combine_features(p1_train, p2_train)
-
-    clf = GridSearchCV(SVC(), parameters, n_jobs=3, cv=5)
+    clf = GridSearchCV(SVC(), parameters, n_jobs=3, cv=5, verbose=1)
     clf.fit(X_train, labels_train)
     report(clf.cv_results_)
 
