@@ -70,7 +70,7 @@ class CosineClassifier(object):
     """
     sklearn: simple cosine similarity classifier
     """
-    def __init__(self, step=1-e3):
+    def __init__(self, step=1e-3):
         self.step = step
         self.threshold = None
 
