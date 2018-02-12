@@ -1,6 +1,8 @@
 
+import warnings
 import numpy as np
 from scipy import sparse
+from sklearn.feature_extraction.text import CountVectorizer
 
 
 def _get_counts(p1, p2, labels):
@@ -17,7 +19,7 @@ def _get_counts(p1, p2, labels):
             # 0: non-shared negative
             counts[0, non_shared_idx] += 1.0
             # 1: shared negative
-            counts[1, shared_idx] += 1.0
+            counts[1, shared_idx ]+= 1.0
         elif labels[row] == 1:
             # 2: non-shared positive
             counts[2, non_shared_idx] += 1.0
@@ -28,41 +30,60 @@ def _get_counts(p1, p2, labels):
 
 
 def _kld(counts, smoothing):
-    # normalize counts to probabilities by label
+    # add smoothing to the counts (avoid zero entries)
     counts += smoothing
-    probs = counts / np.vstack(map(sum, np.split(counts, 2))).repeat(2, 0)
+    # normalize counts to probabilities by label
+    pos, neg = np.split(counts, 2)
+    probs = counts / np.vstack(map(sum, [pos, neg])).repeat(2, 0)
     # compute KL-d: sum(P(i) * log[P(i) / Q(i)])
     P, Q = np.split(probs, 2)
+
     return (P * np.log((P / Q) + 1e-7)).sum(axis=0)
 
 
-class TFKLD(object):
-    """
-    sklearn: TFKLD
-    """
-    def __init__(self, smoothing=0.05):
-        self.weight = None
-        self.smoothing = smoothing
+def _apply_weight(weight, m):
+    return m.multiply(weight[None, :]).tocsr()
 
-    def fit(self, p1, p2, labels):
+
+class TFKLD(CountVectorizer):
+    """
+    sklearn: TFKLD subclass of CountVectorizer
+    """
+    def __init__(self, dtype=np.float, **kwargs):
+        if 'dtype' in kwargs:
+            warnings.warn("Ignoring `dtype` argument. Default to float.")
+            del kwargs['dtype']
+        super(TFKLD, self).__init__(**kwargs)
+
+        self.weight = None
+
+    def fit(self, p1, p2, labels, smoothing=0.05):
+        # strings to counts
+        super().fit_transform(p1 + p2)
+        p1 = super().transform(p1)
+        p2 = super().transform(p2)
+
         if isinstance(labels, list) or isinstance(labels, tuple):
             labels = np.array(labels)
         if p2.shape != p1.shape or p1.shape[0] != labels.shape[0]:
             raise ValueError("Input matrices must be equal shape")
-
-        counts = _get_counts(p1, p2, labels)
-        self.weight = _kld(counts, self.smoothing)
+        # get weight
+        self.weight = _kld(_get_counts(p1, p2, labels), smoothing)  
 
         return self
 
     def transform(self, m):
-        if len(m.shape) != 2 or m.shape[1] != self.weight.shape[0]:
-            raise ValueError("Expected 2D matrix: N x {}".format.self.weight.shape[0])
+        m = super().transform(m)
 
-        return m.multiply(self.weight[None, :]).tocsr()
+        if len(m.shape) != 2 or m.shape[1] != self.weight.shape[0]:
+            raise ValueError("Expected 2D matrix: N x {}".format(self.weight.shape[0]))
+
+        return _apply_weight(self.weight, m)
 
     def fit_transform(self, p1, p2, labels):
+        # 
         self.fit(p1, p2, labels)
+
         return self.transform(p1), self.transform(p2)
 
 
@@ -103,3 +124,7 @@ class CosineClassifier(object):
                 best_threshold = threshold
 
         self.threshold = best_threshold
+
+
+def dump_counts(counts):
+    pass

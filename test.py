@@ -3,10 +3,11 @@ import unittest
 import random
 
 import numpy as np
+from sklearn.feature_extraction.text import CountVectorizer
 import lorem
 from tqdm import tqdm
 
-from tfkld import TFKLD, _get_counts, _kld, make_vectorizer
+from tfkld import _get_counts, _kld, _apply_weight
 
 
 def _test_counts(p1, p2, labels):
@@ -45,7 +46,7 @@ def _test_kld(counts, smoothing):
     return weight
 
 
-class TestConditionals(unittest.TestCase):
+class TestTFKLD(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         p1, p2, labels = [], [], []
@@ -54,30 +55,30 @@ class TestConditionals(unittest.TestCase):
             p2.append(lorem.sentence())
             labels.append(random.randint(0, 1))
 
-        vec = make_vectorizer(p1 + p2)
-        p1, p2 = vec.transform(p1), vec.transform(p2)
-        labels = np.array(labels)
-        cls.p1, cls.p2, cls.labels = p1, p2, labels
+        vec = CountVectorizer(dtype=np.float).fit(p1 + p2)
+        cls.p1, cls.p2 = vec.transform(p1), vec.transform(p2)
+        cls.labels = np.array(labels)
 
-    def test_conditionals(self):
-        p1, p2 = TestConditionals.p1, TestConditionals.p2
-        labels = TestConditionals.labels
+    def test_counting(self):
+        labels, p1, p2 = TestTFKLD.labels, TestTFKLD.p1, TestTFKLD.p2
 
+        print("Testing counting...")
         counts1 = _get_counts(p1, p2, labels)
         counts2 = _test_counts(p1, p2, labels)
-        self.assertTrue(np.all(counts1 == counts2))
+        self.assertTrue(np.all(counts1 == counts2), "Counting methods")
 
+        print("Testing weight")
         weight1 = _kld(counts1, 0.05)
         weight2 = _test_kld(counts2, 0.05)
-        self.assertTrue(np.allclose(weight1, weight2))
+        self.assertTrue(np.allclose(weight1, weight2), "Weight methods")
 
+        print("Testing weighting")
         # transform using fast method
-        tf = TFKLD()
-        tf.weight = weight2
-        weighted1 = tf.transform(p1)
+        weighted1 = _apply_weight(weight1, p1)
         # transform using original method (row-wise)
-        for n in range(p1.shape[0]):
-            p1[n, :] = p1[n, :].multiply(weight2)
-        weighted2 = p1
+        weighted2 = p1.copy()
+        for i in range(weighted2.shape[0]):
+            weighted2[i, :] = weighted2[i, :].multiply(weight2)
 
-        self.assertTrue(np.allclose(weighted1.todense(), weighted2.todense()))
+        self.assertTrue(np.allclose(weighted1.todense(), weighted2.todense()),
+                        "Weighted results")

@@ -1,7 +1,6 @@
 
 import os
 import numpy as np
-from sklearn.feature_extraction.text import CountVectorizer
 
 
 def load_text(path, sep='\t', max_pairs=None):
@@ -40,13 +39,6 @@ def load_dir(path, sep='\t', max_pairs=None, include_dev=False):
 
         return (labels_train, p1_train, p2_train), \
             (labels_test, p1_test, p2_test)
-
-
-def make_vectorizer(X_train, ngram_range=(1, 2)):
-    """
-    Auxiliary function to create a vectorizer
-    """
-    return CountVectorizer(ngram_range=ngram_range, dtype=np.float).fit(X_train)
 
 
 def combine_features(p1, p2):
