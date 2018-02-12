@@ -1,15 +1,27 @@
 
 import numpy as np
 from scipy import sparse as sp
-from sklearn.decomposition import NMF, TruncatedSVD
 from sklearn.model_selection import GridSearchCV
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.preprocessing import normalize
 from sklearn.svm import LinearSVC
-from sklearn.metrics import classification_report, accuracy_score
+from sklearn.metrics import accuracy_score, confusion_matrix
 
 from tfkld import TFKLD
-from utils import loguniform, sample_param_dists, combine_features, load_dir, report
+from dim_reduction import DimReduction
+from utils import combine_features, load_dir, report
+
+
+def f1_score(y_true, y_pred):
+    mat = confusion_matrix(y_true, y_pred)
+    # Column sum - precision
+    p = (1.0 * mat[0,0] / mat[:,0].sum()) + (1.0 * mat[1,1] / mat[:,1].sum())
+    p = p / 2.0
+    # Row sum - recall
+    r = (1.0 * mat[0,0] / mat[0,:].sum()) + (1.0 * mat[1,1] / mat[1,:].sum())
+    r = r / 2.0
+    f1 = (2 * p * r) / (p + r)
+    return f1, p, r
 
 
 if __name__ == '__main__':
@@ -18,7 +30,7 @@ if __name__ == '__main__':
     parser.add_argument('path')
     parser.add_argument('--sep', default='\t')
     parser.add_argument('--weighting', default='tfkld')
-    parser.add_argument('--dr_type', required=True)
+    parser.add_argument('--dr_method', required=True)
     parser.add_argument('--n_components', type=int, default=400)
     parser.add_argument('--transductive', action='store_true')
     args = parser.parse_args()
@@ -37,46 +49,33 @@ if __name__ == '__main__':
         weighter = TfidfVectorizer(
             ngram_range=ngram_range# , stop_words='english'
         ).fit(p1_trn + p2_trn + p1_tst + p2_tst)
-        
+
     p1_trn, p2_trn = weighter.transform(p1_trn), weighter.transform(p2_trn)
     p1_tst, p2_tst = weighter.transform(p1_tst), weighter.transform(p2_tst)
 
     print("Reducing...")
-    dr = None
-    if args.dr_type.lower() == 'nmf':
-        dr = NMF(n_components=args.n_components)
-    elif args.dr_type.lower() == 'svd':
-        dr = TruncatedSVD(n_components=args.n_components, algorithm='arpack')
-    else:
-        raise ValueError("Unrecognized dr_type {}".format(args.dr_type))
-
+    dr = DimReduction(args.dr_method, args.n_components)
     if args.transductive:
-        reduced = sp.vstack([p1_trn, p2_trn, p1_tst, p2_tst])
-        reduced = dr.fit_transform(reduced)
-        p1_trn, p2_trn = np.split(reduced[:p1_trn.shape[0] * 2], 2)
-        p1_tst, p2_tst = np.split(reduced[p1_trn.shape[0] * 2:], 2)
+        trn, tst = dr.fit_transform(sp.vstack([p1_trn, p2_trn]),
+                                    sp.vstack([p1_tst, p2_tst]))
+        (p1_trn, p2_trn), (p1_tst, p2_tst) = np.split(trn, 2), np.split(tst, 2)
     else:
-        reduced = sp.vstack([p1_trn, p2_trn])
-        p1_trn, p2_trn = np.split(dr.fit_transform(reduced), 2)
-        p1_tst, p2_tst = dr.transform(p1_tst), dr.transform(p2_tst)
+        p1_trn, p2_trn = np.split(dr.fit_transform(sp.vstack([p1_trn, p2_trn])), 2)
+        p1_tst, p2_tst = np.split(dr.transform(sp.vstack([p1_tst, p2_tst])), 2)
 
     print("Training...")
-    # parameters = sample_param_dists(
-    #     [[('kernel', ['linear'], 1),
-    #       ('C', loguniform(10, 0, 3), 6)],
-    #      [('kernel', ['rbf'], 1),
-    #       ('C', loguniform(10, 0, 3), 6),
-    #       ('gamma', loguniform(10, -9, 3), 10)]])
-
-    X_trn = normalize(combine_features(p1_trn, p2_trn))
     # clf = GridSearchCV(
     #     LinearSVC(penalty='l2', loss='hinge', dual=True, class_weight=None),
     #     [{'C': [0.1, 0.2, 0.5, 1, 10, 100]}], n_jobs=3, cv=5, verbose=1)
     clf = LinearSVC(penalty='l2', C=0.2, loss='hinge', dual=True, class_weight=None)
-    clf.fit(X_trn, labels_trn)
+    clf.fit(normalize(combine_features(p1_trn, p2_trn)), labels_trn)
     # report(clf.cv_results_)
 
     print("Testing...")
     y_pred = clf.predict(normalize(combine_features(p1_tst, p2_tst)))
-    print(classification_report(labels_tst, y_pred))
-    print(" accuracy: {:.3f}".format(accuracy_score(labels_tst, y_pred)))
+    f1, p, r = f1_score(labels_tst, y_pred)
+    acc = accuracy_score(labels_tst, y_pred)
+    print(" * Accuracy: {:.3f}".format(acc))
+    print(" * F1-score: {:.3f}".format(f1))
+    print(" * Precision: {:.3f}".format(p))
+    print(" * Recall {:.3f}".format(r))

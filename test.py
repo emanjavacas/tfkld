@@ -12,7 +12,7 @@ from tfkld import _get_counts, _kld, _apply_weight
 
 def _test_counts(p1, p2, labels):
     """
-    Runs slow original python code
+    Runs original slow python code
     """
     nrows, ncols = p1.shape
     count = np.ones((4, ncols))
